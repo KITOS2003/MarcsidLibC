@@ -5,11 +5,70 @@
 
 #include<bits/wordsize.h>
 
-#include"include/Hash.h"
-
 #define INITIAL_INDEX_STACK_CAPACITY 256
 #define HASH_TABLE_DARRAY_MIN_CAPACITY 64
 
+typedef void *(*alloc_t)( size_t );
+typedef void *(*realloc_t)( void *, size_t );
+typedef void  (*free_t)( void * );
+
+typedef struct HashTableEntry
+{
+    char *key;
+    void *data;
+    struct HashTableEntry *next;
+}
+HashTableEntry;
+
+typedef struct HashTableDarray
+{
+    HashTableEntry *data;
+
+    size_t n_elements;
+    size_t capacity;
+    size_t reserve_space;
+
+    alloc_t allocator;
+    realloc_t reallocator;
+    free_t liberator;
+
+    size_t *index_stack;
+    size_t *index_stack_top;
+    size_t index_stack_capacity;
+}
+HashTableDarray;
+
+typedef struct HashTable
+{
+    HashTableEntry **table;
+    size_t table_size;
+    size_t seed;
+
+    HashTableDarray entries;
+}
+HashTable;
+
+#if __WORDSIZE == 32
+uint32_t MurmurHash2 ( const void * key, int len, uint32_t seed )
+#elif __WORDSIZE == 64
+uint64_t MurmurHash2 ( const void * key, int len, uint64_t seed );
+#endif
+
+
+HashTable _HashTable_create
+    (
+        size_t table_size, 
+        size_t seed,
+        alloc_t allocator,
+        realloc_t reallocator,
+        free_t liberator
+    );
+void HashTable_destroy( HashTable *self );
+void HashTable_add_entry( HashTable *self, const char *key, const void *data );
+void HashTable_remove_entry( HashTable *self, char *key );
+void *HashTable_get_entry( HashTable *self, const char *key );
+void HashTable_print( HashTable *self );
+void HashTable_resize( HashTable *self, size_t new_size, size_t new_seed );
 
 /***********************************/  
 /**DARRAY CREATION AND DESTRUCTION**/
@@ -18,9 +77,9 @@
 static inline HashTableDarray HashTableDarray_create
     ( 
         size_t capacity,
-        void* (*allocator)( size_t ),
-        void* (*reallocator)( void*, size_t ),
-       void  (*liberator)( void* )
+        alloc_t allocator,
+        realloc_t reallocator,
+        free_t liberator
     )
 {
     HashTableEntry *data = allocator( capacity * sizeof(HashTableEntry) );
@@ -373,4 +432,3 @@ uint64_t MurmurHash2 ( const void * key, int len, uint64_t seed )
 } 
 
 #endif
-
