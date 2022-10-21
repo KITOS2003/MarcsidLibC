@@ -4,6 +4,10 @@
 #include<string.h>
 #include<stdio.h>
 
+typedef void* (*malloc_t)(size_t);
+typedef void* (*realloc_t)(void*, size_t);
+typedef void  (*free_t)(void*);
+
 typedef struct Darray
 {
     size_t n_elements;
@@ -11,159 +15,125 @@ typedef struct Darray
     size_t capacity;
     size_t reserve_space;
 
-    void* (*allocator)( size_t );
-    void* (*reallocator)( void*, size_t );
-    void  (*liberator)( void* );
+    malloc_t allocator;
+    realloc_t reallocator;
+    free_t liberator;
 }
 Darray;
 
-#define GET_SELF(array) (Darray*)((char*)(array) - sizeof(Darray))
+#define GET_SELF(data) (Darray*)(data - sizeof(Darray))
+#define GET_DATA(self) (void*)(self) + sizeof(Darray)
 
-/**********************************/ 
-/************GETTERS***************/
-/**********************************/ 
-
-size_t Darray_length( void *array )
+void *_Darray_create
+    (
+        size_t element_size, 
+        size_t initial_capacity, 
+        malloc_t allocator, 
+        realloc_t reallocator, 
+        free_t liberator 
+    )
 {
-    Darray *self = GET_SELF(array);
+    Darray *self = malloc( element_size * initial_capacity + sizeof(Darray) );
+    self->n_elements = 0;
+    self->element_size = element_size;
+    self->capacity = initial_capacity;
+    self->reserve_space = initial_capacity;
+    self->allocator = allocator;
+    self->reallocator = reallocator;
+    self->liberator = liberator;
+
+    return GET_DATA(self);
+}
+
+void Darray_destroy(void *data)
+{
+    Darray *self = GET_SELF(data);
+    self->liberator(self);
+}
+
+/* * * * GETTERS * * * */
+
+size_t Darray_length(void *data)
+{
+    Darray *self = GET_SELF(data);
     return self->n_elements;
 }
 
-size_t Darray_capacity( void *array )
+size_t Darray_get_capacity(void *data)
 {
-    Darray *self = GET_SELF(array);
+    Darray *self = GET_SELF(data);
     return self->capacity;
 }
 
-size_t Darray_get_reserve( void *array )
+size_t Darray_get_reserve(void* data)
 {
-    Darray *self = GET_SELF(array);
+    Darray *self = GET_SELF(data);
     return self->reserve_space;
 }
 
-/**********************************/ 
-/*****CREATION AND DESTRUCTION*****/
-/**********************************/ 
+/* * * * RESIZING * * * */
 
-void *_Darray_create
-    ( 
-        size_t capacity, 
-        size_t element_size,
-        
-        void* (*allocator)( size_t ),
-        void* (*reallocator)( void*, size_t ),
-        void  (*liberator)( void* )
-    )
+static inline void Darray_check_full_and_resize(Darray **self_p, void **data_p, size_t offset)
 {
-    void *memory = allocator( capacity * element_size + sizeof(Darray) );
-
-    Darray *array = memory;
-
-    array->n_elements = 0;
-    array->element_size = element_size;
-    array->capacity = capacity;
-    array->reserve_space = capacity;
-    array->allocator = allocator;
-    array->reallocator = reallocator;
-    array->liberator = liberator;
-
-    return ((char*)(memory)+sizeof(Darray));
-}
-
-void Darray_destroy( void *array )
-{
-    Darray *self = GET_SELF(array);
-    self->liberator(array);
-}
-
-/**********************************/ 
-/************RESIZING**************/
-/**********************************/ 
-
-void Darray_reserve( void **array, size_t new_size )
-{
-    Darray *self = GET_SELF(*array);
-    self->reserve_space = new_size;
-    if( self->capacity >= new_size )
+    Darray * const self = *self_p;
+    if( self->n_elements + offset >= self->capacity )
     {
-        return;
-    }
-    *array = self->reallocator(array, new_size);
-}
-
-void Darray_resize( void **array, size_t new_size )
-{
-    Darray *self = GET_SELF(*array);
-    if( self->reserve_space > new_size )
-    {
-        if( self->capacity > self->reserve_space )
+        for(size_t i = 0 ;self->n_elements+offset>=self->capacity; i++)
         {
-            self->capacity = self->reserve_space;
-            *array = self->reallocator(array, self->capacity);
+            self->capacity *= 2;
         }
-        return;
+        (*self_p) = self->reallocator(self, self->capacity*self->element_size + sizeof(Darray) );
+        (*data_p) = GET_DATA(self);
     }
-    self->capacity = new_size;
-    *array = self->reallocator(array, new_size);
 }
 
-/**********************************/ 
-/*******ELEMENT MANIPULATION*******/
-/**********************************/ 
-
-void *_Darray_push( void *array, void *element )
+static inline void Darray_check_underused_and_resize(Darray **self_p, void **data_p, size_t offset)
 {
-    Darray *self = GET_SELF(array);
-    if( self->n_elements >= self->capacity )
+    Darray * const self = *self_p;
+    if( self->n_elements - offset >= self->capacity/4 && self->reserve_space >= self->capacity/2 )
     {
-        self->capacity *= 2;
-        array = self->reallocator( array, self->capacity );
-        self = GET_SELF(array);
+        (*self_p) = self->reallocator(self, self->capacity*self->element_size + sizeof(Darray) );
+        (*data_p) = GET_DATA(self);
     }
-    memcpy( ((char*)(array) + self->n_elements*self->element_size), element, self->element_size );
+}
+
+void Darray_reserve(void **data_p, size_t new_reserve_space)
+{
+    Darray *self = GET_SELF(*data_p);
+    if( new_reserve_space > self->capacity )               
+    {
+        self->capacity = new_reserve_space;
+        self = self->reallocator(self, self->capacity*self->element_size + sizeof(Darray) );
+        (*data_p) = GET_DATA(self);
+    }
+    self->reserve_space = new_reserve_space;
+}
+
+/* * * * ELEMENT MANIPULATION * * * */
+
+void _Darray_push(void **data_p, void *element)
+{
+    Darray *self = GET_SELF(*data_p);
+    Darray_check_full_and_resize( &self, data_p, 1 );
+    memcpy((*data_p)+(self->n_elements*self->element_size), element, self->element_size);
     self->n_elements += 1;
-    return array;
 }
 
-void _Darray_push_middle( void *array, void *element )
+void _Darray_pop(void **data_p)
 {
-    Darray *self = GET_SELF(array);
-
-}
-
-void _Darray_pop( void *array, void *var )
-{
-    Darray *self = GET_SELF(array);
+    Darray *self = GET_SELF(*data_p);
+    Darray_check_underused_and_resize( &self, data_p, 1 );
     self->n_elements -= 1;
-    memcpy( var, ((char*)(array) + self->n_elements*self->element_size), self->element_size );
-    if( self->n_elements < self->capacity/4 && self->capacity/2 > self->reserve_space )
-    {
-        self->capacity /= 2;
-        array = self->reallocator( array, self->capacity );
-    }
 }
 
-void Darray_merge( void *array1, void *array2 )
+void Darray_print( void *data, const char * const format )
 {
-    Darray *dest   = GET_SELF(array1);
-    Darray *source = GET_SELF(array2);
-
-    size_t occupied_space_dest   = dest->n_elements*dest->element_size;
-    size_t occupied_space_source = source->n_elements*source->element_size;
-
-    size_t initial_capacity_dest = dest->capacity;
-    while( dest->capacity - occupied_space_dest < occupied_space_source )
+    Darray *self = GET_SELF(data);
+    printf("[ ");
+    for(size_t i = 0; i < self->n_elements; i++)
     {
-        dest->capacity *= 2;
+        printf( format, data+(i*self->element_size) );
+        printf(", ");
     }
-
-    if( dest->capacity != initial_capacity_dest )
-    {
-        array1 = dest->reallocator( array1, dest->capacity );
-        dest = GET_SELF(array1);
-    }
-    memcpy( ((char*)(array1) + occupied_space_dest), array2, occupied_space_source );
-    dest->n_elements += source->n_elements;
+    printf("]\n");
 }
-
-

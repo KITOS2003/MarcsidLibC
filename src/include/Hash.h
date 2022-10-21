@@ -1,5 +1,5 @@
-#ifndef PANIM_HASH_TABLE_H
-#define PANIM_HASH_TABLE_H
+#ifndef HASH_TABLE_H
+#define HASH_TABLE_H
 
 #include<stdlib.h>
 #include<stdint.h>
