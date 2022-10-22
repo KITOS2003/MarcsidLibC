@@ -1,4 +1,4 @@
-#include<stddef.h>
+#include <stddef.h>
 #include<stdint.h>
 #include<stdlib.h>
 #include<string.h>
@@ -190,10 +190,47 @@ void _Darray_pop_middle(void **data_p, size_t index, void *out)
         return;
     }
 #endif
-    Darray_check_underused_and_resize(&self, data_p, 1);
     void *middle_p = (*data_p) + index*self->element_size;
     memmove(middle_p, middle_p+self->element_size, (self->n_elements-index)*self->element_size );
+    Darray_check_underused_and_resize(&self, data_p, 1);
     self->n_elements -= 1;
+}
+
+void _Darray_push_middle_multiple(void **data_p, size_t index, void *arr, size_t n)
+{
+    Darray *self = GET_SELF(*data_p);
+#ifdef DARRAY_DEBUG
+    if(index > self->n_elements-1)
+    {
+        printf("Darray: refused to carry on with call to _Darray_push_middle_multiple, index overflows array length\n");
+        return;
+    }
+#endif
+    Darray_check_full_and_resize(&self, data_p, n);
+    void *middle_p = (*data_p) + index*self->element_size;
+    memmove(middle_p+n*self->element_size, middle_p, (self->n_elements-index)*self->element_size );
+    memcpy(middle_p, arr, n*self->element_size);
+    self->n_elements += n;
+}
+
+void _Darray_pop_middle_multiple(void **data_p, size_t index, void *out, size_t n)
+{
+    Darray *self = GET_SELF(*data_p);
+#ifdef DARRAY_DEBUG
+    if(index > self->n_elements-1)
+    {
+        printf("Darray: refused to carry on with call to _Darray_pop_middle_multiple, index overflows array length\n");
+        return;
+    }
+    if( n > self->n_elements )
+    {
+
+    }
+#endif
+    void *middle_p = (*data_p) + index*self->element_size;
+    memmove(middle_p, middle_p+n*self->element_size, (self->n_elements-index)*self->element_size);
+    Darray_check_underused_and_resize(&self, data_p, n);
+    self->n_elements -= n;
 }
 
 /* * * * CONVENIENCE * * * */
