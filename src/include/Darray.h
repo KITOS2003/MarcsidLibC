@@ -38,6 +38,12 @@ void _Darray_push_multiple(void**, void*, size_t);
 void _Darray_pop_multiple(void**, void*, size_t);
 #define Darray_pop_multiple(data_p, out, n) _Darray_pop_multiple((void**)data_p, out, n)
 
+void _Darray_push_middle(void **, size_t, void*);
+#define Darray_push_middle(data_p, index, element) {__auto_type Darray_push_temp_var = element; _Darray_push_middle((void**)data_p, index, &Darray_push_temp_var);}
+
+void _Darray_pop_middle(void **, size_t, void *);
+#define Darray_pop_middle(data_p, index, out) _Darray_pop_middle((void**)data_p, index, out)
+
 void Darray_print(void *, const char * const, void (*)(void*) );
 
 #endif

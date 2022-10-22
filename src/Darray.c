@@ -170,15 +170,30 @@ void _Darray_push_middle(void **data_p, size_t index, void *element)
     if(index > self->n_elements-1)
     {
         printf("Darray: refused to carry on with call to _Darray_push_middle, index overflows array length\n");
-        return;                                                                                   Darray: pop function called upon empty array.\n
+        return;
     }
 #endif
     Darray_check_full_and_resize(&self, data_p, 1);
+    void *middle_p = (*data_p) + index*self->element_size;
+    memmove( middle_p+self->element_size, middle_p, (self->n_elements-index)*self->element_size );
+    memcpy( middle_p, element, self->element_size );
+    self->n_elements += 1;
 }
 
 void _Darray_pop_middle(void **data_p, size_t index, void *out)
 {
-
+    Darray *self = GET_SELF(*data_p);
+#ifdef DARRAY_DEBUG 
+    if(index > self->n_elements-1)
+    {
+        printf("Darray: refused to carry on with call to _Darray_pop_middle, index overflows array length\n");
+        return;
+    }
+#endif
+    Darray_check_underused_and_resize(&self, data_p, 1);
+    void *middle_p = (*data_p) + index*self->element_size;
+    memmove(middle_p, middle_p+self->element_size, (self->n_elements-index)*self->element_size );
+    self->n_elements -= 1;
 }
 
 /* * * * CONVENIENCE * * * */

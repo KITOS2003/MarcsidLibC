@@ -19,9 +19,10 @@ int main()
     float a = 0.0f;
 
     Darray_push_multiple( &arr, &eee, 7 );
-    Darray_pop( &arr, &a );
+    Darray_pop( &arr, NULL );
 
-    printf("%f\n\n\n", a);
+    Darray_push_middle( &arr, 2, 1.1111f );
+    Darray_pop_middle( &arr, 4, NULL );
 
     Darray_print( arr, NULL, f );
 }
