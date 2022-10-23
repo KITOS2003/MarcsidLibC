@@ -233,6 +233,82 @@ void _Darray_pop_middle_multiple(void **data_p, size_t index, void *out, size_t 
     self->n_elements -= n;
 }
 
+void _Darray_push_beg(void **data_p, void *element)
+{
+    Darray *self = GET_SELF(*data_p);
+    Darray_check_full_and_resize(&self, data_p, 1);
+    memmove(*data_p+self->element_size, *data_p, self->n_elements*self->element_size);
+    memcpy(*data_p, element, self->element_size);
+    self->n_elements += 1;
+}
+
+void _Darray_pop_beg(void **data_p, void *out)
+{
+    Darray *self = GET_SELF(*data_p);
+    if( out != NULL )
+    {
+        memcpy(out, *data_p, self->element_size);
+    }
+#ifdef DARRAY_DEBUG
+    if(self->n_elements == 0)
+    {
+    }
+#endif
+    memmove(*data_p, *data_p+self->element_size, (self->n_elements-1)*self->element_size);
+    Darray_check_underused_and_resize(&self, data_p, 1);
+    self->n_elements -= 1;
+}
+
+void _Darray_push_beg_multiple(void **data_p, void *array, size_t n)
+{
+    Darray *self = GET_SELF(*data_p);
+    Darray_check_full_and_resize(&self, data_p, n);
+    memmove(*data_p+n*self->element_size, *data_p, self->n_elements*self->element_size);
+    memcpy(*data_p, array, n*self->element_size);
+    self->n_elements += n;
+}
+
+void _Darray_pop_beg_multiple(void **data_p, void *out, size_t n)
+{
+    Darray *self = GET_SELF(*data_p);
+    if(out != NULL)
+    {
+        memcpy(out, *data_p, n*self->n_elements);
+    }
+#ifdef DARRAY_DEBUG
+#endif
+    memmove(*data_p, *data_p+n*self->element_size, (self->n_elements-n)*self->n_elements);
+    Darray_check_underused_and_resize(&self, data_p, n);
+    self->n_elements -= n;
+}
+
+void _Darray_merge(void **data_p1, void *data2)
+{
+    size_t len = Darray_length(data2);
+    _Darray_push_multiple(data_p1, data2, len);
+}
+
+void _Darray_merge_middle(void **data_p1, void *data2, size_t index)
+{
+    size_t len = Darray_length(data2);
+    _Darray_push_middle_multiple(data_p1, index, data2, len);
+}
+
+void _Darray_merge_beg(void **data_p1, void *data2, size_t index)
+{
+    size_t len = Darray_length(data2);
+    _Darray_push_beg_multiple(data_p1, data2, len);
+}
+
+void *Darray_split(void *data_p, size_t start_index, size_t end_index)
+{
+    Darray *self = GET_SELF(data_p);
+    size_t new_array_size = end_index-start_index;
+    void *result = _Darray_create(self->element_size, new_array_size, self->allocator, self->reallocator, self->liberator );
+    _Darray_push_multiple( &result, data_p+start_index*self->element_size, new_array_size );
+    return result;
+}
+
 /* * * * CONVENIENCE * * * */
 
 void Darray_print( void *data, const char * const format, void (*print_func)(void *value_p) )
