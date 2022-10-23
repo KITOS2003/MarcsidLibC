@@ -300,12 +300,12 @@ void _Darray_merge_beg(void **data_p1, void *data2, size_t index)
     _Darray_push_beg_multiple(data_p1, data2, len);
 }
 
-void *Darray_split(void *data_p, size_t start_index, size_t end_index)
+void *Darray_split(void *data, size_t start_index, size_t end_index)
 {
-    Darray *self = GET_SELF(data_p);
+    Darray *self = GET_SELF(data);
     size_t new_array_size = end_index-start_index;
     void *result = _Darray_create(self->element_size, new_array_size, self->allocator, self->reallocator, self->liberator );
-    _Darray_push_multiple( &result, data_p+start_index*self->element_size, new_array_size );
+    _Darray_push_multiple( &result, data+start_index*self->element_size, new_array_size );
     return result;
 }
 
