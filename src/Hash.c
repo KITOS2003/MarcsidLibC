@@ -49,7 +49,7 @@ typedef struct HashTable
 HashTable;
 
 #if __WORDSIZE == 32
-uint32_t MurmurHash2 ( const void * key, int len, uint32_t seed )
+uint32_t MurmurHash2 ( const void * key, int len, uint32_t seed );
 #elif __WORDSIZE == 64
 uint64_t MurmurHash2 ( const void * key, int len, uint64_t seed );
 #endif

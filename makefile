@@ -2,7 +2,7 @@
 
 CC=gcc
 
-CFLAGS= -g -O3 -std=c11 -march=native -pedantic -Wall -Wextra -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable -Wno-pointer-arith
+CFLAGS= -g -std=c11 -march=native -pedantic -Wall -Wextra -Wno-implicit-fallthrough -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable -Wno-pointer-arith
 LFLAGS= -lpthread
 
 SOURCE=src
