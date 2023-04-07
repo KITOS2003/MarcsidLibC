@@ -1,6 +1,7 @@
-#include "buildless.c"
+#include "../src/Buildless.c"
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 
 void test_end_beg(const int argc, const char *argv[])
@@ -25,7 +26,14 @@ void test_generic_cmp(const int argc, const char *argv[])
         {
             for (size_t i = 0; i < Darray_length(matches); i += 1)
             {
-                printf("%s\n", matches[i]);
+                if (*matches[i] == 0)
+                {
+                    printf("-- EMPTY --\n");
+                }
+                else
+                {
+                    printf("%s\n", matches[i]);
+                }
             }
             const char *str = generic_to_literal(argv[3], matches);
             if (str != NULL)
@@ -38,8 +46,9 @@ void test_str_find(int argc, char *argv[])
 {
     if (argc >= 2)
     {
-        size_t index = str_find(argv[1], argv[2]);
-        printf("%ld\n", (int64_t)index);
+        size_t end;
+        size_t start = str_find(argv[1], argv[2], &end);
+        printf("%ld %ld\n", (int64_t)start, (int64_t)end);
     }
 }
 
@@ -73,15 +82,34 @@ void test_concat(const int argc, const char *argv[])
     }
 }
 
+void test_str_split(const int argc, const char *argv[])
+{
+    if (argc > 1)
+    {
+        char **split = str_split(argv[1], '@');
+        for (size_t i = 0; i < Darray_length(split); i += 1)
+        {
+            if (*(split[i]) == 0)
+            {
+                printf("-- EMPTY --\n");
+            }
+            else
+            {
+                printf("%s\n", split[i]);
+            }
+        }
+    }
+}
+
 int main(const int argc, const char *argv[])
 {
-
-    buildless_init(argv);
-    /* char *arr[] = {NULL, "hello@world", "hello__world"}; */
-    test_generic_cmp(argc, argv);
+    const char *arr[] = {NULL, "aaa@bbb", "aaa_hello_bbb"};
+    /* test_generic_cmp(6, arr); */
+    /* test_generic_cmp(argc, argv); */
     /* test_str_find(argc, argv); */
     /* test_mkdirs(argc, argv); */
     /* test_listdir(argc, argv); */
     /* printf("%d\n", is_dir(argv[1])); */
     /* test_concat(argc, argv); */
+    /* test_str_split(argc, argv); */
 }

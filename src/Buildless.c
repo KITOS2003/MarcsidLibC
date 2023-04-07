@@ -70,7 +70,8 @@ void *_Darray_create(size_t element_size, size_t initial_capacity,
                      malloc_t allocator, realloc_t reallocator,
                      free_t liberator);
 #define Darray_create(type, capacity)                                          \
-    _Darray_create(sizeof(type), capacity, malloc, darray_realloc, free)
+    _Darray_create(sizeof(type), capacity, _buildless_malloc,                  \
+                   _buildless_realloc, _buildless_free)
 
 void Darray_destroy(void *data);
 
@@ -101,6 +102,8 @@ void _Darray_merge(void **, void *);
 
 size_t Darray_length(void *data);
 
+void Darray_free_all(void *data);
+
 #endif // #ifndef BUILDLESS_NODEFINE_DARRAY
 
 #define STR_ARRAY(...) _Darray_from_strings(__VA_ARGS__, NULL)
@@ -108,24 +111,24 @@ char **_Darray_from_strings(const char *first, ...);
 
 // "Garbage collection"
 
-#define gc_strdup(str) gc_add(strdup(str));
+static void **tracked_memory = NULL;
 
-static void **gc_registry_internal = NULL;
-static size_t *gc_free_ind_internal = NULL;
+static inline void _buildless_track_memory();
 
-static void **gc_registry_user = NULL;
-static size_t *gc_free_ind_user = NULL;
+static inline void *_buildless_malloc(size_t size);
+static inline void *_buildless_realloc(void *ptr, size_t size);
+static inline void _buildless_free(void *ptr);
 
-static inline void gc_collect_all();
-static inline void *darray_realloc(void *, size_t);
+static inline void _buildless_clean_memory();
 
 // string utils
 
 char *str_join(char **str_arr);
 bool str_begins_with(const char *string, const char *prefix);
 bool str_ends_with(const char *string, const char *postfix);
-size_t str_find(const char *string, const char *substring);
+size_t str_find(const char *string, const char *substring, size_t *end);
 size_t *str_find_char(const char *string, char c);
+const char *str_get_path(const char *path);
 
 #define str_concat(...) _str_concat_va(__VA_ARGS__, NULL)
 const char *_str_concat_va(const char *first, ...);
@@ -147,8 +150,8 @@ typedef struct
     char **dependencies;
 } Rule;
 
-void _buildless_init(const char **argv, const char *file);
-#define buildless_init(argv) _buildless_init(argv, __FILE__)
+void _buildless_init(int argc, const char **argv, const char *file);
+#define buildless_init(argc, argv) _buildless_init(argc, argv, __FILE__)
 
 bool buildless_make_rule(Rule *rule, Rule *all, size_t n_rules,
                          const char *target, char **matches);
@@ -184,7 +187,7 @@ void *_Darray_create(size_t element_size, size_t initial_capacity,
                      malloc_t allocator, realloc_t reallocator,
                      free_t liberator)
 {
-    Darray *self = malloc(element_size * initial_capacity + sizeof(Darray));
+    Darray *self = allocator(element_size * initial_capacity + sizeof(Darray));
     self->n_elements = 0;
     self->element_size = element_size;
     self->capacity = initial_capacity;
@@ -335,76 +338,64 @@ char **_Darray_from_strings(const char *first, ...)
     return result;
 }
 
+#define DARRAY_FREE_ALL(array)                                                 \
+    {                                                                          \
+        for (size_t i = 0; i < Darray_length(array); i += 1)                   \
+        {                                                                      \
+            _buildless_free(array[i]);                                         \
+        }                                                                      \
+        Darray_destroy(array);                                                 \
+    }
+
 #endif // #ifndef BUILDLESS_NOINCLUDE_DARRAY_IMPLEMENTATION
 
 // "garbage collection" implementation:
-static inline void gc_collect_all()
+
+static inline void *_buildless_malloc(size_t size)
 {
-    /* for (size_t i = 0; i < Darray_length(gc_registry_internal); i += 1) */
-    /* { */
-    /*     for (size_t j = 0; j < Darray_length(gc_free_ind_internal); j += 1)
-     */
-    /*     { */
-    /*         size_t ind = gc_free_ind_internal[j]; */
-    /*         if (i == ind) */
-    /*         { */
-    /*             goto continue_gc_loop; */
-    /*         } */
-    /*     } */
-    /*     /1* free(gc_registry_internal[i]); *1/ */
-    /* continue_gc_loop: */
-    /*     continue; */
-    /* } */
-    /* Darray_destroy(gc_registry_internal); */
-    /* gc_registry_internal = Darray_create(void *, 32); */
+    if (tracked_memory == NULL)
+    {
+        return malloc(size);
+    }
+    fprintf(stderr, "UNREACHABLE %s\n", __FUNCTION__);
+    exit(1);
 }
 
-static inline void *gc_add(void *ptr)
+static inline void *_buildless_realloc(void *ptr, size_t size)
 {
-    /* if (Darray_length(gc_free_ind_internal) == 0) */
-    /* { */
-    /*     Darray_push(&gc_registry_internal, ptr); */
-    /*     return ptr; */
-    /* } */
-    /* size_t ind = 0; */
-    /* Darray_pop(&gc_free_ind_internal, &ind); */
-    /* gc_registry_internal[ind] = ptr; */
-    return ptr;
+    if (tracked_memory == NULL)
+    {
+        return realloc(ptr, size);
+    }
+    fprintf(stderr, "UNREACHABLE %s\n", __FUNCTION__);
+    exit(1);
 }
 
-static inline void gc_pop(void *ptr)
+static inline void _buildless_free(void *ptr)
 {
-    /* for (size_t i = 0; i < Darray_length(gc_registry_internal); i += 1) */
-    /* { */
-    /*     if (gc_registry_internal[i] == ptr) */
-    /*     { */
-    /*         Darray_push(&gc_free_ind_internal, i); */
-    /*         break; */
-    /*     } */
-    /* } */
+    if (tracked_memory == NULL)
+    {
+        free(ptr);
+        return;
+    }
+    fprintf(stderr, "UNREACHABLE %s\n", __FUNCTION__);
+    exit(1);
 }
 
-static inline void *darray_realloc(void *ptr, size_t size)
+static inline void _buildless_track_memory()
 {
-    /* int32_t ind = -1; */
-    /* for (size_t i = 0; i < Darray_length(gc_registry_internal); i += 1) */
-    /* { */
-    /*     if (ptr == gc_registry_internal[i]) */
-    /*     { */
-    /*         ind = i; */
-    /*         break; */
-    /*     } */
-    /* } */
-    ptr = realloc(ptr, size);
-    /* if (ind != -1) */
-    /* { */
-    /*     gc_registry_internal[ind] = ptr; */
-    /* } */
-    return ptr;
+    tracked_memory = Darray_create(void *, 256);
+}
+
+static inline void _buildless_clean_memory()
+{
+    Darray_destroy(tracked_memory);
+    tracked_memory = NULL;
 }
 
 // string utils
 
+// allocates result
 char *str_join(char **str_arr)
 {
     size_t str_size = 0;
@@ -412,7 +403,7 @@ char *str_join(char **str_arr)
     {
         str_size += strlen(str_arr[i]) + 1;
     }
-    char *result = malloc(str_size);
+    char *result = _buildless_malloc(str_size);
     *result = 0;
     strcat(result, str_arr[0]);
     for (size_t i = 1; i < Darray_length(str_arr); i += 1)
@@ -420,10 +411,10 @@ char *str_join(char **str_arr)
         strcat(result, " ");
         strcat(result, str_arr[i]);
     }
-    gc_add(result);
     return result;
 }
 
+// allocates result (Darray)
 size_t *str_find_char(const char *string, char c)
 {
     size_t *result = Darray_create(size_t, 10);
@@ -438,7 +429,6 @@ size_t *str_find_char(const char *string, char c)
     {
         return NULL;
     }
-    gc_add(GET_SELF(result));
     return result;
 }
 
@@ -478,17 +468,20 @@ bool str_ends_with(const char *string, const char *postfix)
 
 // returns index of the last character of the first occurrence of substring in
 // string, returns -1 if substring is not present in string
-size_t str_find(const char *string, const char *substring)
+size_t str_find(const char *string, const char *substring, size_t *end)
 {
     size_t susbstring_index = 0;
+    size_t result = 0;
     for (size_t i = 0; i <= strlen(string); i += 1)
     {
         if (substring[susbstring_index] == 0)
         {
-            return i;
+            *end = i;
+            return result;
         }
         if (string[i] != substring[susbstring_index])
         {
+            result = i + 1;
             susbstring_index = 0;
         }
         else
@@ -496,96 +489,47 @@ size_t str_find(const char *string, const char *substring)
             susbstring_index += 1;
         }
     }
+    *end = -1;
     return -1;
 }
 
+// Allocates result and its members
 char **str_split(const char *string, char c)
 {
-    char **result = Darray_create(char *, 10);
-    char *str_copy = gc_strdup(string);
+    char **result = Darray_create(char *, 16);
     size_t *indices = str_find_char(string, c);
     if (indices == NULL)
     {
         return NULL;
     }
-    Darray_push(&indices, strlen(str_copy));
     size_t prev_ind = 0;
-    for (size_t i = 0; i < Darray_length(indices); i += 1)
+    for (size_t i = 0; i <= Darray_length(indices); i += 1)
     {
-        size_t ind = indices[i];
-        str_copy[ind] = 0;
-        Darray_push(&result, &(str_copy[prev_ind]));
+        size_t ind;
+        if (i == Darray_length(indices))
+        {
+            ind = strlen(string);
+        }
+        else
+        {
+            ind = indices[i];
+        }
+        char *s = _buildless_malloc((ind - prev_ind + 1) * sizeof *s);
+        memcpy(s, &string[prev_ind], (ind - prev_ind) * sizeof *s);
+        s[ind - prev_ind] = 0;
+        Darray_push(&result, s);
         prev_ind = ind + 1;
     }
-    gc_add(GET_SELF(result));
+    Darray_destroy(indices);
     return result;
 }
 
-const char *str_pop_path(const char *string, char **path_out)
-{
-    size_t *indices = str_find_char(string, DIR_DIVISOR_CHAR);
-    if (indices == NULL)
-    {
-        if (path_out != NULL)
-            *path_out = "";
-        return string;
-    }
-    size_t ind = 0;
-    Darray_pop(&indices, &ind);
-    if (path_out != NULL)
-    {
-        char *buf = gc_strdup(string);
-        buf[ind] = 0;
-        *path_out = buf;
-        return &buf[ind + 1];
-    }
-    char *result = malloc((strlen(string) - ind) * sizeof *result);
-    strcpy(result, &string[ind]);
-    gc_add(result);
-    return result;
-}
-
-const char *str_pop_extension(const char *string, char **extension_out)
-{
-    size_t *indices_dot = str_find_char(string, '.');
-    size_t *indices_div = str_find_char(string, DIR_DIVISOR_CHAR);
-    if (indices_dot == NULL)
-    {
-        if (extension_out != NULL)
-            *extension_out = "";
-        return string;
-    }
-    size_t last_dot_ind = 0;
-    if (indices_div != NULL)
-    {
-        last_dot_ind = indices_dot[Darray_length(indices_dot) - 1];
-        if (last_dot_ind < indices_div[Darray_length(indices_div) - 1])
-        {
-            *extension_out = "";
-            return string;
-        }
-    }
-    if (extension_out != NULL)
-    {
-        char *buf = strdup(string);
-        buf[last_dot_ind] = 0;
-        *extension_out = &buf[last_dot_ind + 1];
-        gc_add(buf);
-        return buf;
-    }
-    char *result = malloc((strlen(string) - strlen(&string[last_dot_ind] + 1)) *
-                          sizeof *result);
-    memcpy(result, string, (last_dot_ind) * sizeof(char));
-    result[last_dot_ind] = 0;
-    gc_add(result);
-    return result;
-}
-
+// allocates result
 #define str_concat(...) _str_concat_va(__VA_ARGS__, NULL)
 const char *_str_concat_va(const char *first, ...)
 {
     size_t allocated_size = 512;
-    char *result = malloc(512 * sizeof *result);
+    char *result = _buildless_malloc(512 * sizeof *result);
     *result = 0;
     va_list args;
     va_start(args, first);
@@ -597,19 +541,33 @@ const char *_str_concat_va(const char *first, ...)
         {
             allocated_size *= 2;
         }
-        result = realloc(result, allocated_size * sizeof *result);
+        result = _buildless_realloc(result, allocated_size * sizeof *result);
         strcat(result, s);
     }
     va_end(args);
-    gc_add(result);
+    /* gc_add(result); */
     return (const char *)result;
+}
+
+const char *str_get_path(const char *path)
+{
+    size_t *indices = str_find_char(path, DIR_DIVISOR_CHAR);
+    if (indices == NULL)
+    {
+        return NULL;
+    }
+    size_t index = indices[Darray_length(indices) - 1];
+    Darray_destroy(indices);
+    char *result = _buildless_malloc((index + 1) * sizeof *result);
+    memcpy(result, path, index * sizeof *result);
+    result[index] = 0;
+    return result;
 }
 
 // generics
 
 bool generic_cmp(const char *generic, const char *string, char ***matches_out)
 {
-    char *string_copy = strdup(string);
     char **split = str_split(generic, '@');
     if (split == NULL)
     {
@@ -619,37 +577,58 @@ bool generic_cmp(const char *generic, const char *string, char ***matches_out)
         }
         return false;
     }
-    char **matches = Darray_create(char *, 16);
     if (!str_begins_with(string, split[0]) ||
         !str_ends_with(string, split[Darray_length(split) - 1]))
     {
-        Darray_destroy(matches);
         if (matches_out != NULL)
             *matches_out = NULL;
-        free(string_copy);
         return false;
     }
-    char *s = string_copy;
+    size_t *start_indices = Darray_create(size_t, 16);
+    size_t *end_indices = Darray_create(size_t, 16);
+    const char *s = string;
     for (size_t i = 0; i < Darray_length(split); i += 1)
     {
-        size_t ind = str_find(s, split[i]);
+        size_t end = 0;
+        size_t ind = str_find(s, split[i], &end);
         if (ind == -1)
         {
-            Darray_destroy(matches);
             if (matches_out != NULL)
                 *matches_out = NULL;
-            free(string_copy);
+            Darray_destroy(start_indices);
+            Darray_destroy(end_indices);
             return false;
         }
-        s += ind;
-        Darray_push(&matches, s);
-        if (strlen(split[i]) != 0) // TODO is this ok??
-            *(s - strlen(split[i])) = 0;
+        Darray_push(&start_indices, s - string + ind);
+        Darray_push(&end_indices, s - string + end);
+        s += end;
     }
-    Darray_pop(&matches, NULL);
-    gc_add(string_copy);
+    if (s - string != strlen(string))
+    {
+        size_t ind = Darray_length(start_indices) - 1;
+        start_indices[ind] = strlen(string);
+        end_indices[ind] = strlen(string);
+    }
+    char **matches = Darray_create(char *, 16);
+    for (size_t i = 0; i < Darray_length(start_indices) - 1; i += 1)
+    {
+        size_t match_size = start_indices[i + 1] - end_indices[i];
+        char *match = _buildless_malloc((match_size + 1) * sizeof *match);
+        memcpy(match, &string[end_indices[i]], match_size * sizeof *match);
+        match[match_size] = 0;
+        Darray_push(&matches, match);
+    }
     if (matches_out != NULL)
+    {
         *matches_out = matches;
+    }
+    else
+    {
+        DARRAY_FREE_ALL(matches);
+    }
+    DARRAY_FREE_ALL(split);
+    Darray_destroy(start_indices);
+    Darray_destroy(end_indices);
     return true;
 }
 
@@ -660,20 +639,25 @@ const char *generic_to_literal(const char *generic, char **matches)
         return strdup(generic);
     }
     size_t *indices = str_find_char(generic, '@');
+    if (indices == NULL)
+    {
+        return generic;
+    }
     if (Darray_length(indices) != Darray_length(matches))
     {
-        fprintf(
-            stderr,
-            "[ERROR:] Cant convert generic %s to literal given matches %s\n",
-            generic, str_join(matches));
+        fprintf(stderr,
+                "[ERROR:] Cant convert generic to literal since the number of "
+                "@s and the number of matches are different: %lu %lu\n",
+                Darray_length(indices), Darray_length(matches));
+        exit(1); // TODO
     }
     size_t matches_total_size = 0;
     for (size_t i = 0; i < Darray_length(matches); i += 1)
     {
         matches_total_size += strlen(matches[i]);
     }
-    char *result =
-        malloc((strlen(generic) + matches_total_size) * sizeof *result);
+    char *result = _buildless_malloc((strlen(generic) + matches_total_size) *
+                                     sizeof *result);
     *result = 0;
     char **split = str_split(generic, '@');
     for (size_t i = 0; i < Darray_length(matches); i += 1)
@@ -682,14 +666,30 @@ const char *generic_to_literal(const char *generic, char **matches)
         strcat(result, matches[i]);
     }
     strcat(result, split[Darray_length(split) - 1]);
+    Darray_destroy(indices);
+    DARRAY_FREE_ALL(split);
     return result;
 }
 
-// buildless core
+/* * * buildless core * * */
+
+// options passed through command line
+struct
+{
+    bool force;
+} OPTS;
+
+void _buildless_process_opt(const char *opt)
+{
+    if (strcmp(opt, "--force") == 0 || strcmp(opt, "-f") == 0)
+    {
+        OPTS.force = true;
+    }
+}
 
 void command_va(char *format, ...)
 {
-    char *cmd_string = malloc(4000);
+    char *cmd_string = _buildless_malloc(4000);
     va_list args;
     va_start(args, format);
     vsprintf(cmd_string, format, args);
@@ -697,38 +697,61 @@ void command_va(char *format, ...)
     printf("[CMD:] %s\n", cmd_string);
     fflush(stdout);
     system(cmd_string);
-    free(cmd_string);
+    _buildless_free(cmd_string);
 }
 
-void _buildless_init(const char **argv, const char *file)
+void _buildless_init(int argc, const char **argv, const char *file)
 {
-    gc_registry_internal = Darray_create(void *, 128);
-    gc_free_ind_internal = Darray_create(size_t, 32);
-
 #ifndef BUILDLESS_DEBUG
-    if (source_modified_after_target(file, argv[0] + 2) == 1)
+    if (source_modified_after_target(file, argv[0]) == 1)
     {
-        command_va("gcc %s -o %s", file, argv[0] + 2);
-        command_va("%s", argv[0]);
+        const char *exec_name = argv[0];
+        argc -= 1;
+        argv += 1;
+        size_t str_size = 0;
+        for (int i = 0; i < argc; i += 1)
+        {
+            str_size += strlen(argv[i]) + 1;
+        }
+        char *args = _buildless_malloc((str_size + 1) * sizeof *args);
+        *args = 0;
+        for (int i = 0; i < argc; i += 1)
+        {
+            strcat(args, argv[i]);
+            strcat(args, " ");
+        }
+        command_va("%s %s -o %s", COMPILER, file, exec_name);
+        command_va("%s --force %s", exec_name, args);
         exit(0);
     }
 #endif // #ifndef BUILDLESS_DEBUG
 }
 
-void _buildless_go(const int argc, const char *argv[], Rule *all,
-                   size_t n_rules, char *file)
+void _buildless_go(int argc, const char *argv[], Rule *all, size_t n_rules,
+                   char *file)
 {
-    gc_registry_user = gc_registry_internal;
-    gc_free_ind_user = gc_free_ind_internal;
+    argc -= 1;
+    argv += 1;
 
-    gc_registry_internal = Darray_create(void *, 128);
-    gc_free_ind_internal = Darray_create(size_t, 32);
+    for (int i = 0; i < argc; i += 1)
+    {
+        if (argv[i][0] == '-')
+        {
+            _buildless_process_opt(argv[0]);
+            argc -= 1;
+            argv += 1;
+        }
+        else
+        {
+            break;
+        }
+    }
 
-    if (argc == 1)
+    if (argc == 0)
     {
         buildless_make_rule(all, all, n_rules, NULL, NULL);
     }
-    if (argc > 1)
+    if (argc > 0)
     {
         for (int i = 1; i < argc; i += 1)
         {
@@ -740,6 +763,8 @@ void _buildless_go(const int argc, const char *argv[], Rule *all,
                     buildless_make_rule(&all[j], all, n_rules, argv[i],
                                         matches);
                 }
+                if (matches != NULL)
+                    DARRAY_FREE_ALL(matches);
             }
         }
     }
@@ -748,15 +773,18 @@ void _buildless_go(const int argc, const char *argv[], Rule *all,
 bool buildless_make_rule(Rule *rule, Rule *all, size_t n_rules,
                          const char *target, char **matches)
 {
-    bool should_run = false;
+    bool should_run = OPTS.force;
     if (target == NULL)
     {
         target = rule->target;
     }
     {
-        char *path = NULL;
-        str_pop_path(target, &path);
-        mkdir_r(path);
+        const char *path = str_get_path(target);
+        if (path != NULL)
+        {
+            mkdir_r(path);
+            _buildless_free((void *)path);
+        }
     }
     char **dependencies = Darray_create(char *, 32);
     for (size_t i = 0; i < Darray_length(rule->dependencies); i += 1)
@@ -785,7 +813,7 @@ bool buildless_make_rule(Rule *rule, Rule *all, size_t n_rules,
                                                   dependency, new_matches);
                 // TODO fix infinite recursion on circular dependency
                 if (new_matches != NULL)
-                    Darray_destroy(new_matches);
+                    DARRAY_FREE_ALL(new_matches);
                 goto continue_dep_loop;
             }
         }
@@ -806,10 +834,10 @@ bool buildless_make_rule(Rule *rule, Rule *all, size_t n_rules,
     {
         if (rule->callback != NULL)
             rule->callback(dependencies, target, NULL); // TODO args
-        gc_collect_all();
+        /* gc_collect_all(); */
         return true;
     }
-    gc_collect_all(); // TODO FIX GC!!!
+    /* gc_collect_all(); // TODO FIX GC!!! */
     return false;
 }
 
@@ -840,7 +868,8 @@ void mkdir_r(const char *dir)
         MKDIR(dir_copy);
         dir_copy[ind] = DIR_DIVISOR_CHAR;
     }
-    free(dir_copy);
+    Darray_destroy(indices);
+    _buildless_free(dir_copy);
 }
 
 // return NULL if dir does not exist
@@ -855,8 +884,8 @@ char **listdir_r(const char *dir_path)
     }
     for (size_t i = 0; i < Darray_length(ls); i += 1)
     {
-        new_path =
-            malloc((strlen(dir_path) + strlen(ls[i]) + 1) * sizeof *new_path);
+        new_path = _buildless_malloc((strlen(dir_path) + strlen(ls[i]) + 1) *
+                                     sizeof *new_path);
         *new_path = 0;
         strcat(new_path, dir_path);
         strcat(new_path, DIR_DIVISOR_CHAR_STR);
@@ -866,13 +895,13 @@ char **listdir_r(const char *dir_path)
             char **ls_r = listdir_r(new_path);
             Darray_merge(&result, ls_r);
             Darray_destroy(ls_r);
-            free(new_path);
+            _buildless_free(new_path);
         }
         else
         {
             Darray_push(&result, new_path);
         }
-        free(ls[i]);
+        _buildless_free(ls[i]);
     }
     Darray_destroy(ls);
     return result;

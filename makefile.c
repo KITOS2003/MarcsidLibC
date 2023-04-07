@@ -1,5 +1,4 @@
 #include <stdio.h>
-#define BUILDESS_DEBUG
 #define BUILDLESS_INCLUDE_IMPLEMENTATION
 #include "src/Buildless.c"
 
@@ -19,7 +18,8 @@ void build_target(char **dependencies, const char *target, void *args)
 
 int main(const int argc, const char *argv[])
 {
-    buildless_init(argv);
+    buildless_init(argc, argv);
+    int i = 0;
 
     Rule rules[] = {
         {
